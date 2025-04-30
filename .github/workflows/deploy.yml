@@ -14,8 +14,6 @@ jobs:
       FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD }}
       BUNDLE_ID: "com.sai.moodpal"
       TEAM_ID: ${{ secrets.TEAM_ID }}
-      KEYCHAIN_NAME: "ios-build.keychain"
-      KEYCHAIN_PASSWORD: "temp_password"
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -36,23 +34,63 @@ jobs:
           bundle add fastlane
           bundle add xcodeproj
 
-      - name: Create custom keychain
+      - name: Revoke old certificates first
+        env:
+          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
         run: |
-          # Delete keychain if it exists
-          security delete-keychain $KEYCHAIN_NAME || true
+          cd ios
           
-          # Create a new keychain
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_NAME
+          # Create script to revoke certificates
+          cat > revoke_certs.rb << 'EOL'
+          #!/usr/bin/env ruby
+          require 'spaceship'
           
-          # Set keychain settings
-          security set-keychain-settings -lut 21600 $KEYCHAIN_NAME
+          # Login with API Key (more reliable than password)
+          api_key = Spaceship::ConnectAPI::APIKey.new(
+            key_id: ENV['APPSTORE_API_KEY_ID'],
+            issuer_id: ENV['APPSTORE_ISSUER_ID'],
+            key: ENV['APPSTORE_API_PRIVATE_KEY']
+          )
           
-          # Unlock the keychain
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_NAME
+          Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(api_key)
           
-          # Add to keychain search list and make it the default
-          security list-keychains -d user -s $KEYCHAIN_NAME $(security list-keychains -d user | tr -d '"')
-          security default-keychain -s $KEYCHAIN_NAME
+          # Login to Portal
+          Spaceship::Portal.login(ENV['FASTLANE_USER'], ENV['FASTLANE_PASSWORD'])
+          Spaceship::Portal.select_team(team_id: ENV['TEAM_ID'])
+          
+          puts "Looking for distribution certificates to revoke..."
+          
+          # Get all distribution certificates
+          certs = Spaceship::Portal.certificate.all.select do |cert|
+            cert.name.include?("Distribution") || cert.name.include?("Distribu")
+          end
+          
+          puts "Found #{certs.count} distribution certificates"
+          
+          if certs.count >= 3
+            # Revoke all but the newest one
+            certs_to_revoke = certs.sort_by(&:expires).reverse.drop(1)
+            
+            puts "Will revoke #{certs_to_revoke.count} certificates"
+            
+            certs_to_revoke.each do |cert|
+              puts "Revoking certificate '#{cert.name}' (#{cert.id}) expiring on #{cert.expires}"
+              begin
+                cert.revoke!
+                puts "Successfully revoked certificate #{cert.id}"
+              rescue => e
+                puts "Error revoking certificate: #{e.message}"
+              end
+            end
+          else
+            puts "Not enough certificates to require revocation. Will continue."
+          end
+          EOL
+          
+          chmod +x revoke_certs.rb
+          APPSTORE_API_PRIVATE_KEY=${{ secrets.APPSTORE_API_PRIVATE_KEY }} ruby revoke_certs.rb
 
       - name: Fix Xcode project
         run: |
@@ -105,7 +143,7 @@ jobs:
           itc_team_id("$TEAM_ID")
           EOL
           
-          # Create Fastfile with deployment configuration - but with integrated keychain handling
+          # Create Fastfile that uses match to download existing certificates rather than create new ones
           cat > fastlane/Fastfile << EOL
           default_platform(:ios)
           
@@ -130,25 +168,22 @@ jobs:
                 in_house: false
               )
               
-              # Setup keychain for certificates
+              # Setup CI
               setup_ci(
-                force: true,
-                provider: "travis"
-              )
-              
-              # Fetch signing certificates from Apple Developer Portal
-              get_certificates(
-                api_key: api_key,
-                development: false,
-                generate_apple_certs: true,
                 force: true
               )
               
-              # Important: Set access list for the keychain AFTER certificates are installed
-              sh("security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k #{ENV['KEYCHAIN_PASSWORD']} #{ENV['KEYCHAIN_NAME']}")
+              # IMPORTANT: Instead of creating a new certificate, use existing one
+              # This just downloads existing certificates instead of creating new ones
+              cert(
+                api_key: api_key,
+                development: false,
+                force: false,
+                generate_apple_certs: false
+              )
               
               # Get provisioning profiles
-              get_provisioning_profile(
+              sigh(
                 api_key: api_key,
                 app_identifier: "$BUNDLE_ID",
                 force: true
@@ -178,9 +213,4 @@ jobs:
           APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
         run: |
           cd ios
-          
-          # Unlock keychain again just to be sure
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_NAME
-          
-          # Run fastlane
           bundle exec fastlane beta
