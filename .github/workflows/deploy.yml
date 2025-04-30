@@ -47,16 +47,7 @@ jobs:
           #!/usr/bin/env ruby
           require 'spaceship'
           
-          # Login with API Key (more reliable than password)
-          api_key = Spaceship::ConnectAPI::APIKey.new(
-            key_id: ENV['APPSTORE_API_KEY_ID'],
-            issuer_id: ENV['APPSTORE_ISSUER_ID'],
-            key: ENV['APPSTORE_API_PRIVATE_KEY']
-          )
-          
-          Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(api_key)
-          
-          # Login to Portal
+          # Login with username/password which is more reliable for certificate management
           Spaceship::Portal.login(ENV['FASTLANE_USER'], ENV['FASTLANE_PASSWORD'])
           Spaceship::Portal.select_team(team_id: ENV['TEAM_ID'])
           
@@ -69,7 +60,7 @@ jobs:
           
           puts "Found #{certs.count} distribution certificates"
           
-          if certs.count >= 3
+          if certs.count >= 2  # Changed from 3 to 2 to be aggressive in revocation
             # Revoke all but the newest one
             certs_to_revoke = certs.sort_by(&:expires).reverse.drop(1)
             
@@ -90,7 +81,7 @@ jobs:
           EOL
           
           chmod +x revoke_certs.rb
-          APPSTORE_API_PRIVATE_KEY=${{ secrets.APPSTORE_API_PRIVATE_KEY }} ruby revoke_certs.rb
+          ruby revoke_certs.rb
 
       - name: Fix Xcode project
         run: |
@@ -143,7 +134,7 @@ jobs:
           itc_team_id("$TEAM_ID")
           EOL
           
-          # Create Fastfile that uses match to download existing certificates rather than create new ones
+          # Create Fastfile
           cat > fastlane/Fastfile << EOL
           default_platform(:ios)
           
@@ -173,17 +164,16 @@ jobs:
                 force: true
               )
               
-              # IMPORTANT: Instead of creating a new certificate, use existing one
-              # This just downloads existing certificates instead of creating new ones
-              cert(
+              # Fetch signing certificates from Apple Developer Portal
+              get_certificates(
                 api_key: api_key,
                 development: false,
-                force: false,
-                generate_apple_certs: false
+                generate_apple_certs: true,
+                force: true
               )
               
               # Get provisioning profiles
-              sigh(
+              get_provisioning_profile(
                 api_key: api_key,
                 app_identifier: "$BUNDLE_ID",
                 force: true
