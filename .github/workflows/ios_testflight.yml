@@ -19,46 +19,72 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Flutter version
-        run: flutter --version
-
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Decode and debug certificate
+      - name: Decode certificate
         env:
           IOS_DISTRIBUTION_CERTIFICATE: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE }}
         run: |
-          echo -n "$IOS_DISTRIBUTION_CERTIFICATE" | base64 --decode > new_ios_distribution.p12
-          echo "Decoded cert file size:"
-          stat -f%z new_ios_distribution.p12
-          echo "File type:"
-          file new_ios_distribution.p12
-          echo "PKCS12 info check:"
-          openssl pkcs12 -in new_ios_distribution.p12 -info -nodes -passin pass:${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          echo -n "$IOS_DISTRIBUTION_CERTIFICATE" | base64 --decode > certificate.p12
+          echo "Decoded certificate:"
+          ls -l certificate.p12
+          file certificate.p12
 
-      - name: Install Apple certificate and provisioning profile
+      - name: Import certificate into keychain
         env:
           IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
         run: |
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
           KEYCHAIN_PASSWORD="temporary"
           security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          
-          # Import certificate to keychain
-          security import certificate.p12 -P "$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security list-keychain -d user -s $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
 
-      - name: Prepare Flutter iOS build
-        run: |
-          flutter build ios --release --no-codesign
+          # Import the certificate (no -f pkcs12 flag to let macOS auto-detect)
+          security import certificate.p12 -P "$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" -A -k $KEYCHAIN_PATH
 
-      - name: Deploy to TestFlight
+          # Use the new keychain
+          security list-keychains -d user -s $KEYCHAIN_PATH
+          security default-keychain -s $KEYCHAIN_PATH
+
+      - name: Build iOS release (no codesign)
+        run: flutter build ios --release --no-codesign
+
+      - name: Install Fastlane
+        run: sudo gem install fastlane -NV
+
+      - name: Upload to TestFlight
         env:
           FASTLANE_USER: ${{ secrets.FASTLANE_USER }}
           FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD }}
+          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
         run: |
           cd ios
+
+          bundle init || true
+          bundle add fastlane
+          bundle install
+
+          cat > fastlane/Fastfile << 'EOF'
+          default_platform(:ios)
+
+          platform :ios do
+            desc "Deploy to TestFlight"
+            lane :beta do
+              build_app(
+                workspace: "Runner.xcworkspace",
+                scheme: "Runner",
+                export_method: "app-store",
+                output_directory: "./build",
+                output_name: "app.ipa"
+              )
+
+              upload_to_testflight(
+                skip_waiting_for_build_processing: true
+              )
+            end
+          end
+          EOF
+
           bundle exec fastlane beta
