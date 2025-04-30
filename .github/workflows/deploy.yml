@@ -8,6 +8,11 @@ jobs:
   deploy:
     name: Deploy to TestFlight
     runs-on: macos-latest
+    env:
+      FASTLANE_USER: ${{ secrets.FASTLANE_USER }}
+      FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD }}
+      BUNDLE_ID: "com.sai.moodpal"
+      TEAM_ID: ${{ secrets.TEAM_ID }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -46,8 +51,6 @@ jobs:
           security list-keychain -d user -s $KEYCHAIN_PATH
 
       - name: Fix Xcode project
-        env:
-          TEAM_ID: ${{ secrets.TEAM_ID }}
         run: |
           cd ios
           cat > fix_project.rb << 'EOL'
@@ -70,6 +73,7 @@ jobs:
               config.build_settings['DEVELOPMENT_TEAM'] = team_id
               config.build_settings['CODE_SIGN_STYLE'] = 'Manual'
               config.build_settings['CODE_SIGN_IDENTITY'] = 'iPhone Distribution'
+              config.build_settings['PROVISIONING_PROFILE_SPECIFIER'] = "match AppStore #{ENV['BUNDLE_ID']}"
             end
           end
           
@@ -86,8 +90,6 @@ jobs:
           APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
           APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
           APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
-          BUNDLE_ID: "com.sai.moodpal"
-          TEAM_ID: ${{ secrets.TEAM_ID }}
         run: |
           cd ios
           
@@ -99,7 +101,7 @@ jobs:
           mkdir -p fastlane
           cat > fastlane/Appfile << EOL
           app_identifier("$BUNDLE_ID")
-          apple_id("${{ secrets.FASTLANE_USER }}")
+          apple_id("$FASTLANE_USER")
           team_id("$TEAM_ID")
           itc_team_id("$TEAM_ID")
           apple_key_id("$APPSTORE_API_KEY_ID")
@@ -115,19 +117,24 @@ jobs:
             desc "Build and upload to TestFlight"
             lane :beta do
               setup_ci
+              
+              # Important: Explicitly set FASTLANE_USER env var
+              ENV["FASTLANE_USER"] = "$FASTLANE_USER"
+              
               update_code_signing_settings(
                 use_automatic_signing: false,
                 path: "Runner.xcodeproj",
                 team_id: "$TEAM_ID",
                 code_sign_identity: "iPhone Distribution",
-                profile_name: "AppStore $BUNDLE_ID",
                 bundle_identifier: "$BUNDLE_ID"
               )
               
               # Get provisioning profile from App Store Connect
+              # Explicitly passing username parameter
               get_provisioning_profile(
                 app_identifier: "$BUNDLE_ID",
                 team_id: "$TEAM_ID",
+                username: "$FASTLANE_USER",
                 force: true
               )
               
@@ -139,12 +146,14 @@ jobs:
                 export_options: {
                   provisioningProfiles: { 
                     "$BUNDLE_ID" => "AppStore $BUNDLE_ID"
-                  }
+                  },
+                  teamID: "$TEAM_ID"
                 }
               )
               
-              # Upload to TestFlight
+              # Upload to TestFlight - explicitly providing username
               upload_to_testflight(
+                username: "$FASTLANE_USER",
                 skip_waiting_for_build_processing: true
               )
             end
@@ -155,9 +164,6 @@ jobs:
         run: flutter build ios --release --no-codesign
 
       - name: Deploy to TestFlight
-        env:
-          FASTLANE_USER: ${{ secrets.FASTLANE_USER }}
-          FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD }}
         run: |
           cd ios
           bundle exec fastlane beta
