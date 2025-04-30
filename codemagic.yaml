@@ -1,21 +1,25 @@
 workflows:
-  ios-workflow:
-    name: iOS Workflow
+  ios-testflight:
+    name: iOS TestFlight
     instance_type: mac_mini_m1
     environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.sai.moodPal
       vars:
-        XCODE_SCHEME: "Runner"  # Update this if your scheme name is different
+        APP_ID: YOUR_APP_ID_FROM_APP_STORE_CONNECT
     scripts:
       - name: Set up code signing
         script: |
-          echo "Setting up code signing..."
-          keychain initialize
-          app-store-connect fetch-signing-files $BUNDLE_ID --type IOS_APP_STORE --create
+          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
           keychain add-certificates
           xcode-project use-profiles
       - name: Flutter build
         script: |
-          flutter build ipa --release \
-            --export-options-plist=/Users/builder/export_options.plist
+          flutter build ipa --export-options-plist=/Users/builder/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
