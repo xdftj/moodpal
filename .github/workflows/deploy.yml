@@ -74,7 +74,6 @@ jobs:
               config.build_settings['DEVELOPMENT_TEAM'] = team_id
               config.build_settings['CODE_SIGN_STYLE'] = 'Manual'
               config.build_settings['CODE_SIGN_IDENTITY'] = 'iPhone Distribution'
-              config.build_settings['PROVISIONING_PROFILE_SPECIFIER'] = "match AppStore #{ENV['BUNDLE_ID']}"
             end
           end
           
@@ -86,28 +85,30 @@ jobs:
           chmod +x fix_project.rb
           ruby fix_project.rb
 
-      - name: Setup fastlane
+      - name: Setup App Store Connect API Key
         env:
           APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
           APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
           APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
         run: |
+          # Set up API key file
+          mkdir -p $HOME/private_keys
+          echo "$APPSTORE_API_PRIVATE_KEY" > $HOME/private_keys/api_key.p8
+          chmod 600 $HOME/private_keys/api_key.p8
+          echo "Created API key file at $HOME/private_keys/api_key.p8"
+          ls -la $HOME/private_keys/
+
+      - name: Setup fastlane
+        run: |
           cd ios
-          
-          # Set up App Store Connect API access
-          mkdir -p ~/private_keys
-          echo -n "$APPSTORE_API_PRIVATE_KEY" > ~/private_keys/AuthKey_$APPSTORE_API_KEY_ID.p8
+          mkdir -p fastlane
           
           # Create Appfile with credentials
-          mkdir -p fastlane
           cat > fastlane/Appfile << EOL
           app_identifier("$BUNDLE_ID")
           apple_id("$FASTLANE_USER")
           team_id("$TEAM_ID")
           itc_team_id("$TEAM_ID")
-          apple_key_id("$APPSTORE_API_KEY_ID")
-          apple_issuer_id("$APPSTORE_ISSUER_ID")
-          apple_key_filepath("~/private_keys/AuthKey_$APPSTORE_API_KEY_ID.p8")
           EOL
           
           # Create Fastfile with deployment configuration
@@ -117,54 +118,61 @@ jobs:
           platform :ios do
             desc "Build and upload to TestFlight"
             lane :beta do
-              setup_ci
-              
-              # Use Match instead of manual provisioning profile management
-              match(
-                type: "appstore",
-                app_identifier: "$BUNDLE_ID",
-                readonly: true,
-                generate_apple_certs: false,
-                api_key: lane_context[SharedValues::APP_STORE_CONNECT_API_KEY]
+              # Set up code signing
+              update_code_signing_settings(
+                use_automatic_signing: false,
+                path: "Runner.xcodeproj",
+                team_id: "$TEAM_ID",
+                code_sign_identity: "iPhone Distribution",
+                bundle_identifier: "$BUNDLE_ID"
               )
               
-              # Build the app using Match for code signing
+              # Set up App Store Connect API key
+              api_key = app_store_connect_api_key(
+                key_id: "${{ secrets.APPSTORE_API_KEY_ID }}",
+                issuer_id: "${{ secrets.APPSTORE_ISSUER_ID }}",
+                key_content: ENV['APPSTORE_API_PRIVATE_KEY'],
+                duration: 1200,
+                in_house: false
+              )
+              
+              # Fetch signing certificates from Apple Developer Portal
+              get_certificates(
+                api_key: api_key,
+                development: false,
+                generate_apple_certs: true,
+                force: true
+              )
+              
+              # Get provisioning profiles
+              get_provisioning_profile(
+                api_key: api_key,
+                app_identifier: "$BUNDLE_ID",
+                force: true
+              )
+              
+              # Build the app
               build_app(
                 workspace: "Runner.xcworkspace",
                 scheme: "Runner",
-                export_method: "app-store",
-                export_options: {
-                  method: "app-store",
-                  provisioningProfiles: { 
-                    "$BUNDLE_ID" => "match AppStore $BUNDLE_ID"
-                  },
-                  teamID: "$TEAM_ID"
-                }
+                export_method: "app-store"
               )
               
               # Upload to TestFlight
               upload_to_testflight(
-                api_key: lane_context[SharedValues::APP_STORE_CONNECT_API_KEY],
+                api_key: api_key,
                 skip_waiting_for_build_processing: true
               )
             end
           end
           EOL
 
-      - name: Setup App Store Connect API Key
-        run: |
-          cd ios
-          bundle exec fastlane run app_store_connect_api_key \
-            key_id:"$APPSTORE_API_KEY_ID" \
-            issuer_id:"$APPSTORE_ISSUER_ID" \
-            key_filepath:"~/private_keys/AuthKey_$APPSTORE_API_KEY_ID.p8" \
-            duration:1200 \
-            in_house:false
-
       - name: Flutter build
         run: flutter build ios --release --no-codesign
 
       - name: Deploy to TestFlight
+        env:
+          APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
         run: |
           cd ios
           bundle exec fastlane beta
