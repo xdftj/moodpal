@@ -29,13 +29,13 @@ jobs:
         env:
           IOS_DISTRIBUTION_CERTIFICATE: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE }}
         run: |
-          echo -n "$IOS_DISTRIBUTION_CERTIFICATE" | base64 --decode > certificate.p12
+          echo -n "$IOS_DISTRIBUTION_CERTIFICATE" | base64 --decode > new_ios_distribution.p12
           echo "Decoded cert file size:"
-          stat -f%z certificate.p12
+          stat -f%z new_ios_distribution.p12
           echo "File type:"
-          file certificate.p12
+          file new_ios_distribution.p12
           echo "PKCS12 info check:"
-          openssl pkcs12 -in certificate.p12 -info -nodes -passin pass:${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          openssl pkcs12 -in new_ios_distribution.p12 -info -nodes -passin pass:${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
 
       - name: Install Apple certificate and provisioning profile
         env:
