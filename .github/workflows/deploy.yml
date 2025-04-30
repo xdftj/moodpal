@@ -14,6 +14,8 @@ jobs:
       FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD }}
       BUNDLE_ID: "com.sai.moodpal"
       TEAM_ID: ${{ secrets.TEAM_ID }}
+      KEYCHAIN_NAME: "ios-build.keychain"
+      KEYCHAIN_PASSWORD: "temp_password"
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -34,22 +36,22 @@ jobs:
           bundle add fastlane
           bundle add xcodeproj
 
-      - name: Install Apple certificate
-        env:
-          IOS_DISTRIBUTION_CERTIFICATE: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE }}
-          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+      - name: Create custom keychain
         run: |
-          # Create temporary keychain
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          KEYCHAIN_PASSWORD="temporary"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          # Delete keychain if it exists
+          security delete-keychain $KEYCHAIN_NAME || true
           
-          # Import certificate to keychain
-          echo -n "$IOS_DISTRIBUTION_CERTIFICATE" | base64 --decode > certificate.p12
-          security import certificate.p12 -P "$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security list-keychain -d user -s $KEYCHAIN_PATH
+          # Create a new keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_NAME
+          
+          # Set keychain settings
+          security set-keychain-settings -lut 21600 $KEYCHAIN_NAME
+          
+          # Unlock the keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_NAME
+          
+          # Add to keychain search list
+          security list-keychains -d user -s $KEYCHAIN_NAME login.keychain
 
       - name: Fix Xcode project
         run: |
@@ -85,20 +87,11 @@ jobs:
           chmod +x fix_project.rb
           ruby fix_project.rb
 
-      - name: Setup App Store Connect API Key
+      - name: Setup fastlane
         env:
           APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
           APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
           APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
-        run: |
-          # Set up API key file
-          mkdir -p $HOME/private_keys
-          echo "$APPSTORE_API_PRIVATE_KEY" > $HOME/private_keys/api_key.p8
-          chmod 600 $HOME/private_keys/api_key.p8
-          echo "Created API key file at $HOME/private_keys/api_key.p8"
-          ls -la $HOME/private_keys/
-
-      - name: Setup fastlane
         run: |
           cd ios
           mkdir -p fastlane
@@ -141,7 +134,9 @@ jobs:
                 api_key: api_key,
                 development: false,
                 generate_apple_certs: true,
-                force: true
+                force: true,
+                keychain_path: "$KEYCHAIN_NAME",
+                keychain_password: "$KEYCHAIN_PASSWORD"
               )
               
               # Get provisioning profiles
@@ -155,7 +150,14 @@ jobs:
               build_app(
                 workspace: "Runner.xcworkspace",
                 scheme: "Runner",
-                export_method: "app-store"
+                export_method: "app-store",
+                export_options: {
+                  signingStyle: "manual",
+                  teamID: "$TEAM_ID",
+                  provisioningProfiles: {
+                    "$BUNDLE_ID": "match AppStore $BUNDLE_ID"
+                  }
+                }
               )
               
               # Upload to TestFlight
@@ -170,9 +172,19 @@ jobs:
       - name: Flutter build
         run: flutter build ios --release --no-codesign
 
+      - name: Allow keychain access
+        run: |
+          # Configure keychain to allow access without UI prompts
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_NAME
+
       - name: Deploy to TestFlight
         env:
           APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
         run: |
           cd ios
+          
+          # Unlock keychain again just to be sure
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_NAME
+          
+          # Run fastlane
           bundle exec fastlane beta
