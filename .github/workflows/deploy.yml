@@ -19,7 +19,7 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Install Flutter dependencies
+      - name: Install dependencies
         run: flutter pub get
 
       - name: Build iOS app (no code signing)
@@ -30,7 +30,7 @@ jobs:
           cd ios
           gem install fastlane
 
-      - name: Upload to TestFlight via Fastlane
+      - name: Deploy to TestFlight
         env:
           APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
           APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
