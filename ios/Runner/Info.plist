@@ -27,7 +27,7 @@
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
-	<sting>Main</string>
+	<string>Main</string>
 	<key>NSMicrophoneUsageDescription</key>
     <string>This app needs microphone access for voice journals</string>
     <key>NSPhotoLibraryUsageDescription</key>
