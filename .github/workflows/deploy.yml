@@ -12,7 +12,7 @@ jobs:
       FASTLANE_USER: ${{ secrets.FASTLANE_USER }}
       FASTLANE_PASSWORD: ${{ secrets.FASTLANE_PASSWORD }}
       FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD }}
-      BUNDLE_ID: "com.sai.moodpal"
+      BUNDLE_ID: "com.sai.moodPal"  # Corrected to match the exact case
       TEAM_ID: ${{ secrets.TEAM_ID }}
     steps:
       - name: Checkout code
@@ -38,11 +38,8 @@ jobs:
         run: |
           cd ios
           
-          # Output project file for debugging
-          cat Runner.xcodeproj/project.pbxproj
-
-          # Create script to fix code signing
-          cat > reset_signing.rb << 'EOL'
+          # Create script to fix code signing and bundle ID
+          cat > update_project.rb << 'EOL'
           #!/usr/bin/env ruby
           require 'xcodeproj'
           
@@ -56,57 +53,34 @@ jobs:
           project_path = 'Runner.xcodeproj'
           project = Xcodeproj::Project.open(project_path)
           
-          # Completely reset all signing settings
+          # Set proper bundle ID and signing settings
           project.targets.each do |target|
             puts "Target: #{target.name}"
             target.build_configurations.each do |config|
               puts "Config: #{config.name}"
               
-              # Remove ALL signing settings first
-              config.build_settings.delete('CODE_SIGN_STYLE')
-              config.build_settings.delete('CODE_SIGN_IDENTITY')
-              config.build_settings.delete('CODE_SIGN_IDENTITY[sdk=iphoneos*]')
-              config.build_settings.delete('PROVISIONING_PROFILE')
-              config.build_settings.delete('PROVISIONING_PROFILE_SPECIFIER')
-              config.build_settings.delete('DEVELOPMENT_TEAM')
+              # Set correct bundle ID
+              config.build_settings['PRODUCT_BUNDLE_IDENTIFIER'] = bundle_id
               
-              # Add back only what we need for development
+              # Set automatic signing
               config.build_settings['DEVELOPMENT_TEAM'] = team_id
               config.build_settings['CODE_SIGN_STYLE'] = 'Automatic'
               
-              # Only set identity for Release as we're focusing on app store
-              if config.name == 'Release'
-                config.build_settings['CODE_SIGN_IDENTITY'] = 'Apple Development'
-              end
-            end
-          end
-          
-          # Reset TargetAttributes too
-          if project.root_object.attributes['TargetAttributes']
-            project.root_object.attributes['TargetAttributes'].each do |target_id, attrs|
-              # Remove any existing ProvisioningStyle
-              attrs.delete('ProvisioningStyle')
-              # Reset if there's a provisioning profile
-              attrs.delete('ProvisioningProfileSpecifier')
-              attrs.delete('DevelopmentTeam')
-              
-              # Add what we need
-              attrs['DevelopmentTeam'] = team_id
+              # Remove any conflicting settings
+              config.build_settings.delete('CODE_SIGN_IDENTITY')
+              config.build_settings.delete('PROVISIONING_PROFILE_SPECIFIER')
             end
           end
           
           # Save the changes
           project.save
-          puts "Project saved with reset signing settings"
+          puts "Project saved with updated bundle ID and signing settings"
           EOL
           
-          chmod +x reset_signing.rb
-          ruby reset_signing.rb
-          
-          # Show output after changes for debugging
-          cat Runner.xcodeproj/project.pbxproj
+          chmod +x update_project.rb
+          ruby update_project.rb
 
-      - name: Create simplified Fastfile
+      - name: Create Fastfile with allowProvisioningUpdates
         run: |
           cd ios
           mkdir -p fastlane
@@ -118,7 +92,7 @@ jobs:
           team_id("$TEAM_ID")
           EOL
           
-          # Create a very minimal Fastfile
+          # Create a Fastfile that uses allowProvisioningUpdates
           cat > fastlane/Fastfile << EOL
           default_platform(:ios)
           
@@ -134,7 +108,7 @@ jobs:
                 in_house: false
               )
               
-              # Build the app with automatic signing
+              # Build the app with automatic signing and allow provisioning updates
               build_app(
                 workspace: "Runner.xcworkspace",
                 scheme: "Runner",
@@ -144,8 +118,7 @@ jobs:
                   signingStyle: "automatic",
                   teamID: "$TEAM_ID"
                 },
-                skip_profile_detection: true,
-                skip_package_dependencies_resolution: true,
+                xcargs: "-allowProvisioningUpdates", # This is the key flag
                 clean: true
               )
               
