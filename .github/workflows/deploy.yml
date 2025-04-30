@@ -34,92 +34,98 @@ jobs:
           bundle add fastlane
           bundle add xcodeproj
 
-      - name: Update project.pbxproj directly
+      - name: Fix project file
         run: |
           cd ios
-          cat > modify_project.rb << 'EOL'
+          
+          # Output project file for debugging
+          cat Runner.xcodeproj/project.pbxproj
+
+          # Create script to fix code signing
+          cat > reset_signing.rb << 'EOL'
           #!/usr/bin/env ruby
           require 'xcodeproj'
-          
-          # Open the Xcode project
-          project_path = 'Runner.xcodeproj'
-          project = Xcodeproj::Project.open(project_path)
           
           # Get environment variables
           team_id = ENV['TEAM_ID']
           bundle_id = ENV['BUNDLE_ID']
           
-          puts "Setting Team ID: #{team_id}"
-          puts "Using Bundle ID: #{bundle_id}"
+          puts "Team ID: #{team_id}"
+          puts "Bundle ID: #{bundle_id}"
           
-          # Update all targets
+          project_path = 'Runner.xcodeproj'
+          project = Xcodeproj::Project.open(project_path)
+          
+          # Completely reset all signing settings
           project.targets.each do |target|
-            puts "Processing target: #{target.name}"
-            
-            # Update build configurations
+            puts "Target: #{target.name}"
             target.build_configurations.each do |config|
-              puts "  Updating configuration: #{config.name}"
+              puts "Config: #{config.name}"
               
-              # Set team ID
-              config.build_settings['DEVELOPMENT_TEAM'] = team_id
-              
-              # Use automatic signing
-              config.build_settings['CODE_SIGN_STYLE'] = 'Automatic'
-              
-              # For app store distribution
-              if config.name == 'Release'
-                config.build_settings['CODE_SIGN_IDENTITY'] = 'Apple Distribution'
-              else
-                config.build_settings['CODE_SIGN_IDENTITY'] = 'Apple Development'
-              end
-              
-              # Clear any existing provisioning profile settings to avoid conflicts
+              # Remove ALL signing settings first
+              config.build_settings.delete('CODE_SIGN_STYLE')
+              config.build_settings.delete('CODE_SIGN_IDENTITY')
+              config.build_settings.delete('CODE_SIGN_IDENTITY[sdk=iphoneos*]')
               config.build_settings.delete('PROVISIONING_PROFILE')
               config.build_settings.delete('PROVISIONING_PROFILE_SPECIFIER')
+              config.build_settings.delete('DEVELOPMENT_TEAM')
+              
+              # Add back only what we need for development
+              config.build_settings['DEVELOPMENT_TEAM'] = team_id
+              config.build_settings['CODE_SIGN_STYLE'] = 'Automatic'
+              
+              # Only set identity for Release as we're focusing on app store
+              if config.name == 'Release'
+                config.build_settings['CODE_SIGN_IDENTITY'] = 'Apple Development'
+              end
             end
           end
           
-          # Update project attributes
+          # Reset TargetAttributes too
           if project.root_object.attributes['TargetAttributes']
             project.root_object.attributes['TargetAttributes'].each do |target_id, attrs|
-              puts "Setting provisioning style for target ID: #{target_id}"
-              attrs['ProvisioningStyle'] = 'Automatic'
+              # Remove any existing ProvisioningStyle
+              attrs.delete('ProvisioningStyle')
+              # Reset if there's a provisioning profile
+              attrs.delete('ProvisioningProfileSpecifier')
+              attrs.delete('DevelopmentTeam')
+              
+              # Add what we need
+              attrs['DevelopmentTeam'] = team_id
             end
           end
           
-          # Save changes
+          # Save the changes
           project.save
-          puts "Project updated successfully"
+          puts "Project saved with reset signing settings"
           EOL
           
-          chmod +x modify_project.rb
-          ruby modify_project.rb
+          chmod +x reset_signing.rb
+          ruby reset_signing.rb
+          
+          # Show output after changes for debugging
+          cat Runner.xcodeproj/project.pbxproj
 
-      - name: Setup fastlane
-        env:
-          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
-          APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
-          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+      - name: Create simplified Fastfile
         run: |
           cd ios
           mkdir -p fastlane
           
-          # Create Appfile with credentials
+          # Create a minimal Appfile
           cat > fastlane/Appfile << EOL
           app_identifier("$BUNDLE_ID")
           apple_id("$FASTLANE_USER")
           team_id("$TEAM_ID")
-          itc_team_id("$TEAM_ID")
           EOL
           
-          # Create simplified Fastfile that uses App Store Connect API key
+          # Create a very minimal Fastfile
           cat > fastlane/Fastfile << EOL
           default_platform(:ios)
           
           platform :ios do
             desc "Build and upload to TestFlight"
             lane :beta do
-              # Setup API key for TestFlight upload
+              # Set up App Store Connect API key
               api_key = app_store_connect_api_key(
                 key_id: "${{ secrets.APPSTORE_API_KEY_ID }}",
                 issuer_id: "${{ secrets.APPSTORE_ISSUER_ID }}",
@@ -128,34 +134,23 @@ jobs:
                 in_house: false
               )
               
-              # Make absolutely sure we're using automatic signing
-              update_code_signing_settings(
-                use_automatic_signing: true,
-                path: "Runner.xcodeproj",
-                team_id: "$TEAM_ID",
-                targets: "Runner",
-                code_sign_identity: "Apple Distribution",
-                bundle_identifier: "$BUNDLE_ID"
-              )
-              
-              # Build the app
-              gym(
+              # Build the app with automatic signing
+              build_app(
                 workspace: "Runner.xcworkspace",
                 scheme: "Runner",
-                configuration: "Release",
                 export_method: "app-store",
                 export_options: {
                   method: "app-store",
                   signingStyle: "automatic",
                   teamID: "$TEAM_ID"
                 },
-                include_symbols: true,
-                include_bitcode: false,
-                skip_profile_detection: true
+                skip_profile_detection: true,
+                skip_package_dependencies_resolution: true,
+                clean: true
               )
               
               # Upload to TestFlight
-              pilot(
+              upload_to_testflight(
                 api_key: api_key,
                 skip_waiting_for_build_processing: true
               )
@@ -163,16 +158,22 @@ jobs:
           end
           EOL
 
-      - name: Flutter build
-        run: flutter build ios --no-codesign
+      - name: Flutter clean and rebuild
+        run: |
+          flutter clean
+          flutter pub get
+          cd ios
+          rm -rf Pods
+          rm -f Podfile.lock
+          pod install
 
       - name: Deploy to TestFlight
         env:
           APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
         run: |
           cd ios
-          # Explicitly use xcode-select to make sure the right version is used
+          # Explicitly set Xcode version
           sudo xcode-select -s /Applications/Xcode_15.4.app
           
-          # Run fastlane
+          # Run fastlane with minimal environment
           bundle exec fastlane beta
