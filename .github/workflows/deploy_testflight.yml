@@ -1,4 +1,4 @@
-name: Deploy
+name: Deploy to TestFlight
 on:
   push:
     branches: [ main ]
@@ -9,7 +9,7 @@ jobs:
     name: Deploy to TestFlight
     runs-on: macos-latest
     env:
-      BUNDLE_ID: "com.sai.moodPal"
+      BUNDLE_ID: "com.sai.moodpal"  # Corrected to lowercase 'p'
       TEAM_ID: ${{ secrets.TEAM_ID }}
       MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
       MATCH_GITHUB_URL: ${{ secrets.MATCH_GITHUB_URL }}
