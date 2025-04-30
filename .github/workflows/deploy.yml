@@ -10,6 +10,7 @@ jobs:
     runs-on: macos-latest
     env:
       FASTLANE_USER: ${{ secrets.FASTLANE_USER }}
+      FASTLANE_PASSWORD: ${{ secrets.FASTLANE_PASSWORD }}
       FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD }}
       BUNDLE_ID: "com.sai.moodpal"
       TEAM_ID: ${{ secrets.TEAM_ID }}
@@ -118,47 +119,47 @@ jobs:
             lane :beta do
               setup_ci
               
-              # Important: Explicitly set FASTLANE_USER env var
-              ENV["FASTLANE_USER"] = "$FASTLANE_USER"
-              
-              update_code_signing_settings(
-                use_automatic_signing: false,
-                path: "Runner.xcodeproj",
-                team_id: "$TEAM_ID",
-                code_sign_identity: "iPhone Distribution",
-                bundle_identifier: "$BUNDLE_ID"
-              )
-              
-              # Get provisioning profile from App Store Connect
-              # Explicitly passing username parameter
-              get_provisioning_profile(
+              # Use Match instead of manual provisioning profile management
+              match(
+                type: "appstore",
                 app_identifier: "$BUNDLE_ID",
-                team_id: "$TEAM_ID",
-                username: "$FASTLANE_USER",
-                force: true
+                readonly: true,
+                generate_apple_certs: false,
+                api_key: lane_context[SharedValues::APP_STORE_CONNECT_API_KEY]
               )
               
-              # Build the app
+              # Build the app using Match for code signing
               build_app(
                 workspace: "Runner.xcworkspace",
                 scheme: "Runner",
                 export_method: "app-store",
                 export_options: {
+                  method: "app-store",
                   provisioningProfiles: { 
-                    "$BUNDLE_ID" => "AppStore $BUNDLE_ID"
+                    "$BUNDLE_ID" => "match AppStore $BUNDLE_ID"
                   },
                   teamID: "$TEAM_ID"
                 }
               )
               
-              # Upload to TestFlight - explicitly providing username
+              # Upload to TestFlight
               upload_to_testflight(
-                username: "$FASTLANE_USER",
+                api_key: lane_context[SharedValues::APP_STORE_CONNECT_API_KEY],
                 skip_waiting_for_build_processing: true
               )
             end
           end
           EOL
+
+      - name: Setup App Store Connect API Key
+        run: |
+          cd ios
+          bundle exec fastlane run app_store_connect_api_key \
+            key_id:"$APPSTORE_API_KEY_ID" \
+            issuer_id:"$APPSTORE_ISSUER_ID" \
+            key_filepath:"~/private_keys/AuthKey_$APPSTORE_API_KEY_ID.p8" \
+            duration:1200 \
+            in_house:false
 
       - name: Flutter build
         run: flutter build ios --release --no-codesign
