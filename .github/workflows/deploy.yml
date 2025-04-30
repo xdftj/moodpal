@@ -34,7 +34,7 @@ jobs:
           bundle add fastlane
           bundle add xcodeproj
 
-      - name: Fix Xcode project
+      - name: Update project settings for manual signing
         run: |
           cd ios
           cat > fix_project.rb << 'EOL'
@@ -55,8 +55,18 @@ jobs:
             target.build_configurations.each do |config|
               puts "Updating config: #{config.name}"
               config.build_settings['DEVELOPMENT_TEAM'] = team_id
+              config.build_settings['CODE_SIGN_STYLE'] = 'Manual'  # Consistency is key
               config.build_settings['CODE_SIGN_IDENTITY'] = 'iPhone Distribution'
-              config.build_settings['CODE_SIGN_STYLE'] = 'Automatic'  # Changed to automatic
+              # Explicitly set the provisioning profile specifier
+              config.build_settings['PROVISIONING_PROFILE_SPECIFIER'] = ''
+            end
+          end
+          
+          # Manually set the ProvisioningStyle in the pbxproj file
+          project.root_object.attributes['TargetAttributes'].each do |target_id, attrs|
+            if attrs.has_key?('ProvisioningStyle')
+              attrs['ProvisioningStyle'] = 'Manual'
+              puts "Set ProvisioningStyle to Manual for target #{target_id}"
             end
           end
           
@@ -85,16 +95,16 @@ jobs:
           itc_team_id("$TEAM_ID")
           EOL
           
-          # Create a much simpler Fastfile that uses automatic signing
+          # Create Fastfile
           cat > fastlane/Fastfile << EOL
           default_platform(:ios)
           
           platform :ios do
             desc "Build and upload to TestFlight"
             lane :beta do
-              # Setup Xcode with automatic signing
+              # Always ensure we're consistent with manual signing
               update_code_signing_settings(
-                use_automatic_signing: true,
+                use_automatic_signing: false,
                 path: "Runner.xcodeproj",
                 team_id: "$TEAM_ID",
                 code_sign_identity: "iPhone Distribution",
@@ -115,16 +125,29 @@ jobs:
                 force: true
               )
               
-              # Build the app
+              # Get certificates - with force = false to avoid hitting limits
+              cert(
+                api_key: api_key,
+                development: false,
+                force: false
+              )
+              
+              # Get provisioning profile using sigh
+              sigh(
+                api_key: api_key,
+                app_identifier: "$BUNDLE_ID",
+                force: false
+              )
+              
+              # Build the app with manual signing
               build_app(
                 workspace: "Runner.xcworkspace",
                 scheme: "Runner",
                 export_method: "app-store",
-                skip_profile_detection: true,
                 export_options: {
                   method: "app-store",
-                  signingStyle: "automatic",
-                  teamID: "$TEAM_ID"
+                  signingStyle: "manual",
+                  teamID: "$TEAM_ID",
                 }
               )
               
