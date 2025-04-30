@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+      <stop offset="0%" stop-color="#D1C4E9" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#9D8DF1" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <!-- Glow effect -->
+  <circle cx="100" cy="100" r="85" fill="url(#glow)"/>
+  <!-- Main body -->
+  <circle cx="100" cy="100" r="65" fill="#9D8DF1"/>
+  <!-- Eyes -->
+  <path d="M 65 80 L 85 90" stroke="#000000" stroke-width="3" fill="none"/>
+  <path d="M 65 90 L 85 80" stroke="#000000" stroke-width="3" fill="none"/>
+  <path d="M 115 80 L 135 90" stroke="#000000" stroke-width="3" fill="none"/>
+  <path d="M 115 90 L 135 80" stroke="#000000" stroke-width="3" fill="none"/>
+  <!-- Mouth -->
+  <path d="M 85 115 L 115 115" stroke="#000000" stroke-width="3" fill="none"/>
+  <!-- Z's (sleeping) -->
+  <text x="140" y="60" font-family="Arial" font-size="24" font-weight="bold" fill="#7C69EE">Z</text>
+  <text x="150" y="70" font-family="Arial" font-size="16" font-weight="bold" fill="#7C69EE">z</text>
+  <text x="155" y="80" font-family="Arial" font-size="10" font-weight="bold" fill="#7C69EE">z</text>
+  <!-- Droopy arms -->
+  <path d="M 50 110 Q 40 130 30 135" stroke="#9D8DF1" stroke-width="8" fill="none"/>
+  <path d="M 150 110 Q 160 130 170 135" stroke="#9D8DF1" stroke-width="8" fill="none"/>
+  <!-- Level 2 indicator -->
+  <circle cx="175" cy="25" r="15" fill="#9D8DF1" stroke="#000000" stroke-width="2"/>
+  <text x="175" y="30" font-family="Arial" font-size="16" text-anchor="middle" fill="#000000">2</text>
+</svg>

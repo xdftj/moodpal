@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+      <stop offset="0%" stop-color="#90CAF9" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#6699CC" stop-opacity="0.1"/>
+    </radialGradient>
+  </defs>
+  <!-- Glow effect -->
+  <circle cx="100" cy="100" r="90" fill="url(#glow)"/>
+  <!-- Main body -->
+  <circle cx="100" cy="100" r="70" fill="#6699CC"/>
+  <!-- Eyes -->
+  <path d="M 60 75 Q 75 60 90 75" stroke="#000000" stroke-width="4" fill="none"/>
+  <path d="M 110 75 Q 125 60 140 75" stroke="#000000" stroke-width="4" fill="none"/>
+  <circle cx="75" cy="90" r="6" fill="#000000"/>
+  <circle cx="125" cy="90" r="6" fill="#000000"/>
+  <!-- Tears -->
+  <path d="M 75 96 Q 73 110 75 115 Q 77 110 75 96" fill="#FFFFFF"/>
+  <path d="M 125 96 Q 123 110 125 115 Q 127 110 125 96" fill="#FFFFFF"/>
+  <!-- Mouth -->
+  <path d="M 70 135 Q 100 110 130 135" stroke="#000000" stroke-width="5" fill="none"/>
+  <!-- Droopy ears/wings -->
+  <path d="M 40 65 Q 20 90 30 120" stroke="#6699CC" stroke-width="12" fill="none"/>
+  <path d="M 160 65 Q 180 90 170 120" stroke="#6699CC" stroke-width="12" fill="none"/>
+  <!-- Droopy tail -->
+  <path d="M 100 150 Q 90 170 70 175" stroke="#6699CC" stroke-width="12" fill="none"/>
+  <!-- Small blanket/comforter -->
+  <path d="M 70 140 L 130 140 L 140 160 L 60 160 Z" fill="#B3E5FC" stroke="#81D4FA" stroke-width="2"/>
+  <!-- Level 3 indicator -->
+  <circle cx="175" cy="25" r="15" fill="#6699CC" stroke="#000000" stroke-width="2"/>
+  <text x="175" y="30" font-family="Arial" font-size="16" text-anchor="middle" fill="#000000">3</text>
+</svg>

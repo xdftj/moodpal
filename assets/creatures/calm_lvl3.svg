@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+      <stop offset="0%" stop-color="#C8E6C9" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#88D8B0" stop-opacity="0.1"/>
+    </radialGradient>
+  </defs>
+  <!-- Water effect -->
+  <path d="M 0 130 Q 25 120 50 130 Q 75 140 100 130 Q 125 120 150 130 Q 175 140 200 130 L 200 200 L 0 200 Z" fill="#E0F7FA" opacity="0.6"/>
+  <!-- Glow effect -->
+  <circle cx="100" cy="100" r="90" fill="url(#glow)"/>
+  <!-- Main body -->
+  <circle cx="100" cy="100" r="70" fill="#88D8B0"/>
+  <!-- Eyes (closed, peaceful) -->
+  <path d="M 65 85 Q 80 75 95 85" stroke="#000000" stroke-width="3" fill="none"/>
+  <path d="M 105 85 Q 120 75 135 85" stroke="#000000" stroke-width="3" fill="none"/>
+  <!-- Mouth -->
+  <path d="M 80 115 Q 100 130 120 115" stroke="#000000" stroke-width="3" fill="none"/>
+  <!-- Flippers -->
+  <path d="M 40 90 Q 20 80 15 60" stroke="#88D8B0" stroke-width="12" fill="none"/>
+  <path d="M 160 90 Q 180 80 185 60" stroke="#88D8B0" stroke-width="12" fill="none"/>
+  <!-- Tail -->
+  <path d="M 100 150 Q 100 170 80 180" stroke="#88D8B0" stroke-width="12" fill="none"/>
+  <!-- Calm aura -->
+  <circle cx="100" cy="100" r="100" stroke="#C8E6C9" stroke-width="2" stroke-dasharray="5,5" fill="none"/>
+  <circle cx="100" cy="100" r="110" stroke="#C8E6C9" stroke-width="1" stroke-dasharray="3,6" fill="none"/>
+  <!-- Lotus flower on head -->
+  <path d="M 85 50 Q 100 35 115 50" fill="#F8BBD0"/>
+  <path d="M 75 55 Q 100 30 125 55" fill="#F48FB1" opacity="0.7"/>
+  <path d="M 70 65 Q 100 25 130 65" fill="#EC407A" opacity="0.5"/>
+  <circle cx="100" cy="55" r="8" fill="#FFF59D"/>
+  <!-- Level 3 indicator -->
+  <circle cx="175" cy="25" r="15" fill="#88D8B0" stroke="#000000" stroke-width="2"/>
+  <text x="175" y="30" font-family="Arial" font-size="16" text-anchor="middle" fill="#000000">3</text>
+</svg>
