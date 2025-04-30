@@ -1,4 +1,4 @@
-name: Deploy to TestFlight
+name: Deploy TestFlight
 on:
   push:
     branches: [ main ]
@@ -9,7 +9,7 @@ jobs:
     name: Deploy to TestFlight
     runs-on: macos-latest
     env:
-      BUNDLE_ID: "com.sai.moodpal"  # Corrected to lowercase 'p'
+      BUNDLE_ID: "com.sai.moodpal"
       TEAM_ID: ${{ secrets.TEAM_ID }}
       MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
       MATCH_GITHUB_URL: ${{ secrets.MATCH_GITHUB_URL }}
@@ -38,67 +38,7 @@ jobs:
           bundle add fastlane
           bundle add xcodeproj
 
-      - name: Setup fastlane for match only
-        env:
-          APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
-          APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
-          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
-        run: |
-          cd ios
-          mkdir -p fastlane
-          
-          # Create Appfile
-          cat > fastlane/Appfile << EOL
-          app_identifier("$BUNDLE_ID")
-          apple_id("$FASTLANE_USER")
-          team_id("$TEAM_ID")
-          EOL
-          
-          # Create Matchfile
-          cat > fastlane/Matchfile << EOL
-          git_url("$MATCH_GITHUB_URL")
-          storage_mode("git")
-          type("appstore")
-          app_identifier("$BUNDLE_ID")
-          username("$FASTLANE_USER")
-          team_id("$TEAM_ID")
-          EOL
-          
-          # Create temporary Fastfile just for running match
-          cat > fastlane/Fastfile << EOL
-          default_platform(:ios)
-          
-          platform :ios do
-            desc "Sync certificates"
-            lane :sync_certs do
-              # Set up App Store Connect API key
-              api_key = app_store_connect_api_key(
-                key_id: "${{ secrets.APPSTORE_API_KEY_ID }}",
-                issuer_id: "${{ secrets.APPSTORE_ISSUER_ID }}",
-                key_content: ENV['APPSTORE_API_PRIVATE_KEY'],
-                duration: 1200,
-                in_house: false
-              )
-              
-              # Set up CI environment
-              setup_ci
-              
-              # Run match to generate certificates and profiles
-              match(
-                type: "appstore",
-                app_identifier: "$BUNDLE_ID",
-                readonly: false,
-                api_key: api_key,
-                verbose: true
-              )
-            end
-          end
-          EOL
-          
-          # Run match first to generate certificates and profiles
-          bundle exec fastlane sync_certs
-
-      - name: Update project for manual signing with match profiles
+      - name: Clean Xcode project settings
         run: |
           cd ios
           cat > fix_project.rb << 'EOL'
@@ -115,7 +55,7 @@ jobs:
           project_path = 'Runner.xcodeproj'
           project = Xcodeproj::Project.open(project_path)
           
-          # Update for manual signing with match profiles
+          # Clean all code signing settings
           project.targets.each do |target|
             puts "Target: #{target.name}"
             target.build_configurations.each do |config|
@@ -124,42 +64,37 @@ jobs:
               # Set bundle ID
               config.build_settings['PRODUCT_BUNDLE_IDENTIFIER'] = bundle_id
               
-              # Set manual signing with match profile
-              config.build_settings['CODE_SIGN_STYLE'] = 'Manual'
-              config.build_settings['DEVELOPMENT_TEAM'] = team_id
-              config.build_settings['CODE_SIGN_IDENTITY'] = 'iPhone Distribution'
-              config.build_settings['CODE_SIGN_IDENTITY[sdk=iphoneos*]'] = 'iPhone Distribution'
+              # Remove all signing settings
+              config.build_settings.delete('CODE_SIGN_STYLE')
+              config.build_settings.delete('CODE_SIGN_IDENTITY')
+              config.build_settings.delete('CODE_SIGN_IDENTITY[sdk=iphoneos*]')
+              config.build_settings.delete('PROVISIONING_PROFILE')
+              config.build_settings.delete('PROVISIONING_PROFILE_SPECIFIER')
               
-              # Set the provisioning profile name as match creates it
-              config.build_settings['PROVISIONING_PROFILE_SPECIFIER'] = "match AppStore #{bundle_id}"
-            end
-          end
-          
-          # Update root object attributes
-          if project.root_object.attributes['TargetAttributes']
-            project.root_object.attributes['TargetAttributes'].each do |target_id, attrs|
-              attrs['ProvisioningStyle'] = 'Manual'
-              attrs['DevelopmentTeam'] = team_id
+              # Set to automatic signing with team ID
+              config.build_settings['DEVELOPMENT_TEAM'] = team_id
+              config.build_settings['CODE_SIGN_STYLE'] = 'Automatic'
             end
           end
           
           # Save the changes
           project.save
-          puts "Project saved with manual signing settings using match profiles"
+          puts "Project saved with clean signing settings"
           EOL
           
           chmod +x fix_project.rb
           ruby fix_project.rb
 
-      - name: Create build Fastfile
+      - name: Skip certificate creation, use existing ones
         env:
           APPSTORE_API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
           APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
           APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
         run: |
           cd ios
+          mkdir -p fastlane
           
-          # Create Fastfile for building and uploading
+          # Create Fastfile for building without certificate creation
           cat > fastlane/Fastfile << EOL
           default_platform(:ios)
           
@@ -175,33 +110,47 @@ jobs:
                 in_house: false
               )
               
-              # Build the app
+              # Set up CI environment
+              setup_ci
+              
+              # Let Xcode handle the signing automatically
+              update_code_signing_settings(
+                use_automatic_signing: true,
+                team_id: "$TEAM_ID",
+                bundle_identifier: "$BUNDLE_ID",
+                profile_name: "",
+                code_sign_identity: "iPhone Distribution"
+              )
+              
+              # Build the app with automatic signing and allowing provisioning updates
               build_app(
                 workspace: "Runner.xcworkspace",
                 scheme: "Runner",
                 clean: true,
-                output_directory: "./build",
-                output_name: "Runner.ipa",
                 export_method: "app-store",
+                export_team_id: "$TEAM_ID",
                 export_options: {
                   method: "app-store",
-                  signingStyle: "manual",
-                  provisioningProfiles: { 
-                    "$BUNDLE_ID" => "match AppStore $BUNDLE_ID"
-                  },
+                  signingStyle: "automatic",
                   teamID: "$TEAM_ID"
                 },
-                skip_profile_detection: true
+                xcargs: "-allowProvisioningUpdates"
               )
               
               # Upload to TestFlight
               upload_to_testflight(
                 api_key: api_key,
-                skip_waiting_for_build_processing: true,
-                ipa: "./build/Runner.ipa"
+                skip_waiting_for_build_processing: true
               )
             end
           end
+          EOL
+          
+          # Create Appfile
+          cat > fastlane/Appfile << EOL
+          app_identifier("$BUNDLE_ID")
+          apple_id("$FASTLANE_USER")
+          team_id("$TEAM_ID")
           EOL
 
       - name: Flutter clean and rebuild
@@ -218,8 +167,4 @@ jobs:
           APPSTORE_API_PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
         run: |
           cd ios
-          # Explicitly set Xcode version
-          sudo xcode-select -s /Applications/Xcode_15.4.app
-          
-          # Run fastlane
           bundle exec fastlane beta
