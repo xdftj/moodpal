@@ -29,10 +29,9 @@
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
 	<key>NSMicrophoneUsageDescription</key>
-    <string>This app needs microphone access for voice journals</string>
-    <key>NSPhotoLibraryUsageDescription</key>
-    <string>This app needs photo library access to save images</string>
-	<string>Main</string>
+	<string>This app needs microphone access for voice journals</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs photo library access to save images</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
