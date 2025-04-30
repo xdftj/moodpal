@@ -50,8 +50,9 @@ jobs:
           # Unlock the keychain
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_NAME
           
-          # Add to keychain search list
-          security list-keychains -d user -s $KEYCHAIN_NAME login.keychain
+          # Add to keychain search list and make it the default
+          security list-keychains -d user -s $KEYCHAIN_NAME $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s $KEYCHAIN_NAME
 
       - name: Fix Xcode project
         run: |
@@ -104,7 +105,7 @@ jobs:
           itc_team_id("$TEAM_ID")
           EOL
           
-          # Create Fastfile with deployment configuration
+          # Create Fastfile with deployment configuration - but with integrated keychain handling
           cat > fastlane/Fastfile << EOL
           default_platform(:ios)
           
@@ -129,15 +130,22 @@ jobs:
                 in_house: false
               )
               
+              # Setup keychain for certificates
+              setup_ci(
+                force: true,
+                provider: "travis"
+              )
+              
               # Fetch signing certificates from Apple Developer Portal
               get_certificates(
                 api_key: api_key,
                 development: false,
                 generate_apple_certs: true,
-                force: true,
-                keychain_path: "$KEYCHAIN_NAME",
-                keychain_password: "$KEYCHAIN_PASSWORD"
+                force: true
               )
+              
+              # Important: Set access list for the keychain AFTER certificates are installed
+              sh("security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k #{ENV['KEYCHAIN_PASSWORD']} #{ENV['KEYCHAIN_NAME']}")
               
               # Get provisioning profiles
               get_provisioning_profile(
@@ -150,14 +158,7 @@ jobs:
               build_app(
                 workspace: "Runner.xcworkspace",
                 scheme: "Runner",
-                export_method: "app-store",
-                export_options: {
-                  signingStyle: "manual",
-                  teamID: "$TEAM_ID",
-                  provisioningProfiles: {
-                    "$BUNDLE_ID": "match AppStore $BUNDLE_ID"
-                  }
-                }
+                export_method: "app-store"
               )
               
               # Upload to TestFlight
@@ -171,11 +172,6 @@ jobs:
 
       - name: Flutter build
         run: flutter build ios --release --no-codesign
-
-      - name: Allow keychain access
-        run: |
-          # Configure keychain to allow access without UI prompts
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_NAME
 
       - name: Deploy to TestFlight
         env:
