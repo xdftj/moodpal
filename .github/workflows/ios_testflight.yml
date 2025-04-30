@@ -31,6 +31,13 @@ jobs:
           ls -l certificate.p12
           file certificate.p12
 
+      - name: Debug OpenSSL import (verify password works)
+        env:
+          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "Verifying .p12 password with OpenSSL..."
+          openssl pkcs12 -info -in certificate.p12 -passin pass:$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD
+
       - name: Import certificate into keychain
         env:
           IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
@@ -41,7 +48,7 @@ jobs:
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
 
-          # Import the certificate (no -f pkcs12 flag to let macOS auto-detect)
+          # Use auto-detect format, no -f pkcs12
           security import certificate.p12 -P "$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" -A -k $KEYCHAIN_PATH
 
           # Use the new keychain
@@ -58,10 +65,8 @@ jobs:
         env:
           FASTLANE_USER: ${{ secrets.FASTLANE_USER }}
           FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD: ${{ secrets.FASTLANE_APPLE_APPLICATION_SPECIFIC_PASSWORD }}
-          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
         run: |
           cd ios
-
           bundle init || true
           bundle add fastlane
           bundle install
