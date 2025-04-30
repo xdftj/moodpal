@@ -7,7 +7,7 @@ workflows:
         distribution_type: app_store
         bundle_identifier: com.sai.moodPal
       vars:
-        APP_ID: YOUR_APP_ID_FROM_APP_STORE_CONNECT
+        APP_ID: 6745241145
     scripts:
       - name: Set up code signing
         script: |
